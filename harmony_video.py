@@ -7,10 +7,10 @@ st.title("🎬 AI Video Generator (Working Version)")
 
 # ✅ ONLY USE SPACES
 MODEL_OPTIONS = {
-    "🎥 ModelScope": "damo-vilab/text-to-video-ms",
-    "⚡ Zeroscope": "huggingface-projects/zeroscope"
+    "🎥 ModelScope Official": "damo-vilab/text-to-video-ms",
+    "⚡ Zeroscope Demo": "huggingface-projects/zeroscope",
+    "🎞️ Text2Video Demo": "ali-vilab/text-to-video-ms-space"
 }
-
 selected_label = st.selectbox("Choose Model", list(MODEL_OPTIONS.keys()))
 MODEL_ID = MODEL_OPTIONS[selected_label]
 
