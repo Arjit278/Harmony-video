@@ -1,123 +1,82 @@
 import streamlit as st
 from gradio_client import Client
-import tempfile
 import os
 
-# --------------------------------------
-# CONFIG
-# --------------------------------------
 st.set_page_config(page_title="🎬 Pictator Video Engine", layout="wide")
-st.title("🎬 AI Text → Video Generator (Stable Multi-Model)")
+st.title("🎬 AI Video Generator (Working Version)")
 
-# --------------------------------------
-# MODEL OPTIONS
-# --------------------------------------
+# ✅ ONLY USE SPACES
 MODEL_OPTIONS = {
-    "🔥 ModelScope 1.7B (Best)": "ali-vilab/text-to-video-ms-1.7b",
-    "🎥 DAMO Original": "ali-vilab/modelscope-damo-text-to-video-synthesis",
-    "⚡ Camenduru Fast": "camenduru/text-to-video-synthesis",
-    "🧠 Diffusers T2V": "multimodalart/diffusers_text_to_video",
-    "🚀 VDO Optimized": "vdo/text-to-video-ms-1.7b"
+    "🎥 ModelScope": "damo-vilab/text-to-video-ms",
+    "⚡ Zeroscope": "huggingface-projects/zeroscope"
 }
 
 selected_label = st.selectbox("Choose Model", list(MODEL_OPTIONS.keys()))
 MODEL_ID = MODEL_OPTIONS[selected_label]
 
-# --------------------------------------
-# INPUT
-# --------------------------------------
 prompt = st.text_area("Enter Prompt", height=150)
-fps = st.slider("FPS", 8, 24, 12)
-frames = st.slider("Frames (duration)", 8, 32, 16)
 
 # --------------------------------------
-# SAFE VIDEO EXTRACTION
+# SAFE EXTRACTION
 # --------------------------------------
 def extract_video(result):
     try:
-        # Case 1: direct file path
         if isinstance(result, str) and os.path.exists(result):
             with open(result, "rb") as f:
                 return f.read()
 
-        # Case 2: tuple/list
         if isinstance(result, (list, tuple)):
             for item in result:
                 if isinstance(item, str) and os.path.exists(item):
                     with open(item, "rb") as f:
                         return f.read()
 
-        # Case 3: dict output
-        if isinstance(result, dict):
-            for v in result.values():
-                if isinstance(v, str) and os.path.exists(v):
-                    with open(v, "rb") as f:
-                        return f.read()
-
         return None
-
-    except Exception as e:
-        st.error(f"Extraction error: {e}")
+    except:
         return None
 
 # --------------------------------------
-# GENERATION FUNCTION (WITH FALLBACK)
+# GENERATION
 # --------------------------------------
-def generate_video(prompt, fps, frames):
-    models_to_try = [
-        MODEL_ID,
-        "camenduru/text-to-video-synthesis",  # fallback
-        "ali-vilab/text-to-video-ms-1.7b"
-    ]
+def generate_video(prompt):
+    models = list(MODEL_OPTIONS.values())
 
-    for model in models_to_try:
+    for model in models:
         try:
-            st.info(f"⚙️ Trying model: {model}")
+            st.info(f"Trying: {model}")
             client = Client(model)
 
             try:
-                result = client.predict(
-                    prompt,
-                    fps,
-                    frames,
-                    api_name="/predict"
-                )
+                result = client.predict(prompt, api_name="/predict")
             except:
-                # fallback signature (some models only take prompt)
                 result = client.predict(prompt)
 
-            video_bytes = extract_video(result)
+            video = extract_video(result)
 
-            if video_bytes:
-                return video_bytes
+            if video:
+                return video
 
         except Exception as e:
-            st.warning(f"⚠️ Failed on {model}: {e}")
-            continue
+            st.warning(f"{model} failed: {e}")
 
     return None
 
 # --------------------------------------
-# GENERATE BUTTON
+# UI
 # --------------------------------------
 if st.button("🎬 Generate Video"):
 
     if not prompt.strip():
-        st.warning("Enter a prompt")
+        st.warning("Enter prompt")
         st.stop()
 
-    with st.spinner("Generating video (30–120 sec)..."):
-        video_bytes = generate_video(prompt, fps, frames)
+    with st.spinner("Generating..."):
+        video_bytes = generate_video(prompt)
 
     if video_bytes:
-        st.success("✅ Video generated successfully")
+        st.success("✅ Done")
         st.video(video_bytes)
 
-        st.download_button(
-            "⬇️ Download Video",
-            video_bytes,
-            "output.mp4",
-            "video/mp4"
-        )
+        st.download_button("Download", video_bytes, "video.mp4")
     else:
-        st.error("❌ All models failed. Try shorter prompt or different model.")
+        st.error("❌ All Spaces failed (common issue)")
