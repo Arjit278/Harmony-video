@@ -1,110 +1,123 @@
 import streamlit as st
-import requests
-import base64
-import time
+from gradio_client import Client
+import tempfile
+import os
 
 # --------------------------------------
 # CONFIG
 # --------------------------------------
 st.set_page_config(page_title="🎬 Pictator Video Engine", layout="wide")
-st.title("🎬 AI Video Generator (Fixed + Multi Model)")
+st.title("🎬 AI Text → Video Generator (Stable Multi-Model)")
 
 # --------------------------------------
-# MODEL OPTIONS (WORKING SPACES)
+# MODEL OPTIONS
 # --------------------------------------
 MODEL_OPTIONS = {
-    "🎥 Zeroscope XL": {
-        "url": "https://huggingface-projects-zeroscope.hf.space",
-        "type": "gradio"
-    },
-    "🎞️ Text2Video (ModelScope)": {
-        "url": "https://damo-vilab-text-to-video.hf.space",
-        "type": "gradio"
-    }
+    "🔥 ModelScope 1.7B (Best)": "ali-vilab/text-to-video-ms-1.7b",
+    "🎥 DAMO Original": "ali-vilab/modelscope-damo-text-to-video-synthesis",
+    "⚡ Camenduru Fast": "camenduru/text-to-video-synthesis",
+    "🧠 Diffusers T2V": "multimodalart/diffusers_text_to_video",
+    "🚀 VDO Optimized": "vdo/text-to-video-ms-1.7b"
 }
 
 selected_label = st.selectbox("Choose Model", list(MODEL_OPTIONS.keys()))
-MODEL = MODEL_OPTIONS[selected_label]
+MODEL_ID = MODEL_OPTIONS[selected_label]
 
 # --------------------------------------
 # INPUT
 # --------------------------------------
 prompt = st.text_area("Enter Prompt", height=150)
-
 fps = st.slider("FPS", 8, 24, 12)
-frames = st.slider("Frames", 8, 32, 16)
+frames = st.slider("Frames (duration)", 8, 32, 16)
 
 # --------------------------------------
-# GRADIO API HANDLER (FIXED)
+# SAFE VIDEO EXTRACTION
 # --------------------------------------
-def generate_video_gradio(prompt):
+def extract_video(result):
     try:
-        base_url = MODEL["url"]
+        # Case 1: direct file path
+        if isinstance(result, str) and os.path.exists(result):
+            with open(result, "rb") as f:
+                return f.read()
 
-        # Step 1: Join queue
-        join_url = f"{base_url}/queue/join"
+        # Case 2: tuple/list
+        if isinstance(result, (list, tuple)):
+            for item in result:
+                if isinstance(item, str) and os.path.exists(item):
+                    with open(item, "rb") as f:
+                        return f.read()
 
-        payload = {
-            "data": [prompt, fps, frames],
-            "fn_index": 0
-        }
+        # Case 3: dict output
+        if isinstance(result, dict):
+            for v in result.values():
+                if isinstance(v, str) and os.path.exists(v):
+                    with open(v, "rb") as f:
+                        return f.read()
 
-        r = requests.post(join_url, json=payload, timeout=60)
-
-        if r.status_code != 200:
-            st.error(f"Join failed: {r.status_code}")
-            return None
-
-        job = r.json()
-        hash_id = job["hash"]
-
-        # Step 2: Poll queue
-        status_url = f"{base_url}/queue/data?hash={hash_id}"
-
-        for _ in range(30):
-            time.sleep(3)
-            r2 = requests.get(status_url)
-
-            if r2.status_code == 200:
-                data = r2.json()
-
-                if data["status"] == "COMPLETE":
-                    video_path = data["data"][0]
-
-                    # Download video
-                    file_url = f"{base_url}/file={video_path}"
-                    video_bytes = requests.get(file_url).content
-
-                    return video_bytes
-
-        st.error("⏳ Timeout waiting for video")
         return None
 
     except Exception as e:
-        st.error(f"🔥 Error: {e}")
+        st.error(f"Extraction error: {e}")
         return None
 
 # --------------------------------------
-# GENERATE
+# GENERATION FUNCTION (WITH FALLBACK)
+# --------------------------------------
+def generate_video(prompt, fps, frames):
+    models_to_try = [
+        MODEL_ID,
+        "camenduru/text-to-video-synthesis",  # fallback
+        "ali-vilab/text-to-video-ms-1.7b"
+    ]
+
+    for model in models_to_try:
+        try:
+            st.info(f"⚙️ Trying model: {model}")
+            client = Client(model)
+
+            try:
+                result = client.predict(
+                    prompt,
+                    fps,
+                    frames,
+                    api_name="/predict"
+                )
+            except:
+                # fallback signature (some models only take prompt)
+                result = client.predict(prompt)
+
+            video_bytes = extract_video(result)
+
+            if video_bytes:
+                return video_bytes
+
+        except Exception as e:
+            st.warning(f"⚠️ Failed on {model}: {e}")
+            continue
+
+    return None
+
+# --------------------------------------
+# GENERATE BUTTON
 # --------------------------------------
 if st.button("🎬 Generate Video"):
 
-    if not prompt:
-        st.warning("Enter prompt")
+    if not prompt.strip():
+        st.warning("Enter a prompt")
         st.stop()
 
-    with st.spinner("Generating video (this may take 30-90 sec)..."):
-        video_bytes = generate_video_gradio(prompt)
+    with st.spinner("Generating video (30–120 sec)..."):
+        video_bytes = generate_video(prompt, fps, frames)
 
     if video_bytes:
-        st.success("✅ Video generated")
+        st.success("✅ Video generated successfully")
         st.video(video_bytes)
 
         st.download_button(
-            "⬇️ Download",
+            "⬇️ Download Video",
             video_bytes,
-            "video.mp4",
+            "output.mp4",
             "video/mp4"
         )
     else:
-        st.warning("⚠️ Generation failed")
+        st.error("❌ All models failed. Try shorter prompt or different model.")
